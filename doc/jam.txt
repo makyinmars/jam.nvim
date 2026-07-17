@@ -1,0 +1,77 @@
+*jam.txt*                        Search and control music from Neovim
+
+==============================================================================
+CONTENTS                                                        *jam-contents*
+
+1. Introduction ................................................. |jam-intro|
+2. Setup ........................................................ |jam-setup|
+3. Commands ................................................... |jam-commands|
+4. Artwork ..................................................... |jam-artwork|
+
+==============================================================================
+1. INTRODUCTION                                                    *jam-intro*
+
+jam.nvim provides a Telescope interface for music search and playback. Spotify
+is currently the only provider.
+
+Requirements:
+  - Neovim 0.10 or newer
+  - telescope.nvim
+  - curl
+  - openssl
+
+==============================================================================
+2. SETUP                                                            *jam-setup*
+
+Create an application in Spotify's developer dashboard and register this exact
+redirect URI:
+
+  http://127.0.0.1:8765/callback
+
+Then configure jam.nvim:
+>
+  require("jam").setup({
+    providers = {
+      spotify = {
+        client_id = vim.env.SPOTIFY_CLIENT_ID,
+      },
+    },
+  })
+<
+Run `:Jam auth spotify` to connect your account. Spotify playback control
+requires Spotify Premium and an available Spotify Connect device.
+
+==============================================================================
+3. COMMANDS                                                      *jam-commands*
+
+                                                          *:Jam*
+:Jam                      Open the search picker.
+:Jam search               Open the search picker.
+:Jam auth spotify         Authenticate with Spotify.
+:Jam logout               Remove stored Spotify credentials.
+:Jam pause                Pause playback.
+:Jam next                 Skip to the next item.
+:Jam previous             Return to the previous item.
+:Jam now-playing          Display the current track.
+:Jam health               Run health diagnostics.
+
+The picker maps <CR> to play, CTRL-Q to queue, and CTRL-P to pause.
+
+The picker can also be opened after loading the Telescope extension:
+>
+  require("telescope").load_extension("jam")
+  :Telescope jam
+<
+==============================================================================
+4. ARTWORK                                                      *jam-artwork*
+
+With `backend = "auto"`, jam.nvim selects:
+
+  1. image.nvim in a detected compatible terminal
+  2. chafa when its executable is available
+  3. text metadata
+
+Detection is best effort. Set `artwork.backend` to "image", "chafa", "text", or
+"none" to override it. Run `:checkhealth jam` to inspect the selected backend.
+
+vim:tw=78:ts=8:noet:ft=help:norl:
