@@ -15,11 +15,16 @@ M.defaults = {
     cache = true,
   },
   picker = {
-    layout_strategy = "horizontal",
+    layout_strategy = "flex",
     layout_config = {
       width = 0.9,
       height = 0.8,
-      preview_width = 0.45,
+      horizontal = {
+        preview_width = 0.45,
+      },
+      vertical = {
+        preview_height = 0.45,
+      },
     },
   },
   providers = {

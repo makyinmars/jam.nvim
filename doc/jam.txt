@@ -19,6 +19,10 @@ Requirements:
   - telescope.nvim
   - curl
   - openssl
+  - Spotify Premium and an active Spotify Connect device for playback control
+
+Album artwork additionally requires chafa, or image.nvim in a compatible
+terminal. Without either renderer, the preview displays the artwork URL.
 
 ==============================================================================
 2. SETUP                                                            *jam-setup*
@@ -38,8 +42,9 @@ Then configure jam.nvim:
     },
   })
 <
-Run `:Jam auth spotify` to connect your account. Spotify playback control
-requires Spotify Premium and an available Spotify Connect device.
+Run `:checkhealth jam`, then `:Jam auth spotify` to connect your account. Open
+Spotify and play something once before using playback controls; merely opening
+the app may not make it an active Spotify Connect device.
 
 ==============================================================================
 3. COMMANDS                                                      *jam-commands*

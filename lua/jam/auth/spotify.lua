@@ -173,7 +173,10 @@ function SpotifyAuth:login(callback)
       end
       client:read_stop()
       local target = request_data:match("^GET%s+([^%s]+)")
-      local path, query_string = target and target:match("^([^?]+)%??(.*)$")
+      local path, query_string
+      if target then
+        path, query_string = target:match("^([^?]+)%??(.*)$")
+      end
       local params = {}
       for key, value in (query_string or ""):gmatch("([^&=?]+)=([^&]*)") do
         params[key] = value:gsub("%%(%x%x)", function(hex)

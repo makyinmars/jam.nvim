@@ -38,23 +38,28 @@ end
 local function async_finder(provider, search_config)
   local finder = { generation = 0, timer = nil, closed = false }
 
+  local function close_timer(timer)
+    if not timer or timer:is_closing() then
+      return
+    end
+    timer:stop()
+    timer:close()
+  end
+
   function finder:close()
     self.closed = true
-    if self.timer then
-      self.timer:stop()
-      self.timer:close()
-      self.timer = nil
-    end
+    local timer = self.timer
+    self.timer = nil
+    close_timer(timer)
   end
 
   return setmetatable(finder, {
     __call = function(self, prompt, process_result, process_complete)
       self.generation = self.generation + 1
       local generation = self.generation
-      if self.timer then
-        self.timer:stop()
-        self.timer:close()
-      end
+      local previous_timer = self.timer
+      self.timer = nil
+      close_timer(previous_timer)
       if not prompt or vim.trim(prompt) == "" then
         process_complete()
         return
@@ -63,11 +68,10 @@ local function async_finder(provider, search_config)
       local timer = vim.uv.new_timer()
       self.timer = timer
       timer:start(search_config.debounce_ms, 0, function()
-        timer:stop()
-        timer:close()
         if self.timer == timer then
           self.timer = nil
         end
+        close_timer(timer)
         vim.schedule(function()
           provider:search(prompt, search_config, function(err, results)
             if self.closed or generation ~= self.generation then
@@ -111,7 +115,9 @@ local function previewer(artwork_config)
       artwork.render(self.state.bufnr, self.state.winid, item.image_url, artwork_config)
     end,
     teardown = function(self)
-      artwork.clear(self.state.bufnr)
+      if self.state and self.state.bufnr then
+        artwork.clear(self.state.bufnr)
+      end
     end,
   })
 end
@@ -146,6 +152,26 @@ function M.open(provider, config, opts)
       sorter = telescope_config.generic_sorter(picker_opts),
       previewer = previewer(config.artwork),
       attach_mappings = function(prompt_buffer, map)
+        local resize_generation = 0
+        vim.api.nvim_create_autocmd("VimResized", {
+          buffer = prompt_buffer,
+          callback = function()
+            resize_generation = resize_generation + 1
+            local generation = resize_generation
+            vim.defer_fn(function()
+              if
+                generation == resize_generation
+                and vim.api.nvim_buf_is_valid(prompt_buffer)
+              then
+                local current_picker = action_state.get_current_picker(prompt_buffer)
+                if current_picker then
+                  current_picker:refresh()
+                end
+              end
+            end, 75)
+          end,
+        })
+
         actions.select_default:replace(function()
           local selected = action_state.get_selected_entry()
           if not selected then

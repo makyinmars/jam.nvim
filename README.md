@@ -17,15 +17,30 @@ Search Spotify and control playback from a Telescope picker without leaving Neov
 
 ## Requirements
 
+Required:
+
 - Neovim 0.10+
 - [telescope.nvim](https://github.com/nvim-telescope/telescope.nvim)
-- `curl` and `openssl`
+- `curl` for Spotify API requests
+- `openssl` for PKCE authentication
 - A Spotify account and application client ID
-- Spotify Premium for Web API playback control
+- Spotify Premium and an active Spotify Connect device for playback control
 
-Album artwork is optional. Install
-[image.nvim](https://github.com/3rd/image.nvim) in a compatible terminal or
-[`chafa`](https://hpjansson.org/chafa/) for a portable symbol preview.
+Run `:checkhealth jam` after installation to verify these dependencies and your
+configuration.
+
+### Album artwork dependencies
+
+Album artwork requires an optional renderer. Without one, the preview shows the
+image URL as text.
+
+- Install [`chafa`](https://hpjansson.org/chafa/) for a portable symbol preview
+  (`brew install chafa` on macOS or `sudo apt install chafa` on Debian/Ubuntu).
+- Or install [image.nvim](https://github.com/3rd/image.nvim) and use a compatible
+  terminal such as Kitty or WezTerm.
+
+`chafa` is the simplest cross-terminal option. Run `:checkhealth jam` to see
+which artwork backend jam.nvim detected.
 
 ## Installation
 
@@ -102,12 +117,37 @@ Then call `require("jam").setup(...)` from your Lua config.
 
 1. Create an application in the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard).
 2. Add `http://127.0.0.1:8765/callback` as an exact redirect URI.
-3. Put the application's client ID in `SPOTIFY_CLIENT_ID`, or pass it to `setup`.
-4. Restart Neovim and run `:Jam auth spotify`.
-5. Run `:Jam`, enter a search, and press `<CR>` to play a result.
+3. Put the application's client ID in your shell environment:
+
+   ```sh
+   export SPOTIFY_CLIENT_ID="your-client-id"
+   ```
+
+   Add that line to `~/.zshrc`, `~/.bashrc`, or the equivalent for your shell,
+   then start Neovim from a new terminal. A client secret is not needed and
+   should not be added to your configuration.
+4. Install jam.nvim using one of the plugin-manager examples above.
+5. Run `:checkhealth jam` and resolve any reported errors.
+6. Run `:Jam auth spotify` and finish authorization in the browser.
+7. Open Spotify and play something once so Spotify Connect marks the selected
+   device as active.
+8. Run `:Jam`, enter a search, and press `<CR>` to play a result.
 
 Tokens are stored with `0600` permissions under Neovim's data directory. Run
 `:Jam logout` to remove them.
+
+### Troubleshooting
+
+- **`Device not found`**: Open Spotify, select a playback device, and manually
+  play a track once before retrying. Having the app open is not enough for the
+  Web API to consider the device active.
+- **Artwork URL instead of an image**: Install `chafa`, or configure `image.nvim`
+  in a compatible terminal, then reopen the picker.
+- **Client ID is not configured**: Confirm `:echo $SPOTIFY_CLIENT_ID` prints your
+  client ID. Restart Neovim from a new terminal after changing your shell
+  configuration.
+- **OAuth redirect errors**: Confirm the redirect URI in Spotify is exactly
+  `http://127.0.0.1:8765/callback`.
 
 ## Usage
 
@@ -150,7 +190,7 @@ require("jam").setup({
     cache = true,
   },
   picker = {
-    layout_strategy = "horizontal",
+    layout_strategy = "flex",
   },
   providers = {
     spotify = {

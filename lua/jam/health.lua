@@ -40,6 +40,11 @@ function M.check()
   local backend, reason = artwork.detect(config.values.artwork)
   if backend == "text" or backend == "none" then
     vim.health.warn("Artwork backend: " .. backend .. " (" .. reason .. ")")
+    if backend == "text" then
+      vim.health.info(
+        "Install chafa, or install image.nvim and use a compatible terminal, to display artwork"
+      )
+    end
   else
     vim.health.ok("Artwork backend: " .. backend .. " (" .. reason .. ")")
   end
