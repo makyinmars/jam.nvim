@@ -9,6 +9,8 @@ Spotify.capabilities = {
   playback = true,
   queue = true,
   playlists = true,
+  album_tracks = true,
+  artist_top_tracks = true,
   library = true,
   artwork = true,
 }
@@ -40,6 +42,8 @@ local function normalize(item, kind)
     ) or kind == "artist" and "Artist" or owner and ("Playlist by " .. owner) or kind,
     album = album and album.name or (kind == "album" and item.name or nil),
     duration_ms = item.duration_ms,
+    disc_number = item.disc_number,
+    track_number = item.track_number,
     image_url = image_url((album and album.images) or item.images),
     raw = item,
   }
@@ -68,7 +72,22 @@ function Spotify:search(query, options, callback)
     return
   end
   options = options or {}
+  query = vim.trim(query)
+  local prefix, filtered_query = query:match("^([aAtTsS]):%s*(.*)$")
+  local type_by_prefix = {
+    a = "album",
+    t = "artist",
+    s = "track",
+  }
   local types = options.types or { "track", "album", "artist", "playlist" }
+  if prefix then
+    query = vim.trim(filtered_query)
+    types = { type_by_prefix[prefix:lower()] }
+    if query == "" then
+      callback(nil, {})
+      return
+    end
+  end
   local url = API_URL
     .. "/search?"
     .. util.query({
@@ -96,6 +115,63 @@ function Spotify:search(query, options, callback)
   end)
 end
 
+function Spotify:album_tracks(album, callback)
+  if not album or not album.id then
+    callback("A Spotify album ID is required")
+    return
+  end
+
+  local tracks = {}
+  local function fetch(url)
+    self:_request({ url = url }, function(err, response)
+      if err then
+        callback(err)
+        return
+      end
+      for _, item in ipairs((response or {}).items or {}) do
+        if item then
+          local track = normalize(item, "track")
+          track.album = album.name
+          track.image_url = album.image_url
+          table.insert(tracks, track)
+        end
+      end
+      if response and type(response.next) == "string" and response.next ~= "" then
+        fetch(response.next)
+      else
+        callback(nil, tracks)
+      end
+    end)
+  end
+
+  fetch(API_URL .. "/albums/" .. util.urlencode(album.id) .. "/tracks?limit=50")
+end
+
+function Spotify:artist_top_tracks(artist, callback)
+  if not artist or not artist.id then
+    callback("A Spotify artist ID is required")
+    return
+  end
+
+  self:_request({
+    url = API_URL .. "/artists/" .. util.urlencode(artist.id) .. "/top-tracks",
+  }, function(err, response)
+    if err then
+      callback(err)
+      return
+    end
+    local tracks = {}
+    for index, item in ipairs((response or {}).tracks or {}) do
+      if item then
+        local track = normalize(item, "track")
+        track.list_position = index
+        table.insert(tracks, track)
+      end
+    end
+    callback(nil, tracks)
+  end)
+end
+
 function Spotify:play(item, callback)
   local body
   if item.kind == "track" then
@@ -103,12 +179,29 @@ function Spotify:play(item, callback)
   else
     body = { context_uri = item.uri }
   end
-  self:_request({
-    method = "PUT",
-    url = API_URL .. "/me/player/play",
-    headers = { ["Content-Type"] = "application/json" },
-    body = vim.json.encode(body),
-  }, callback)
+  self:_request(
+    {
+      method = "PUT",
+      url = API_URL .. "/me/player/play",
+      headers = { ["Content-Type"] = "application/json" },
+      body = vim.json.encode(body),
+    },
+    function(err)
+      local lower_error = err and err:lower() or ""
+      local no_device = lower_error:find("device not found", 1, true)
+        or lower_error:find("no active device", 1, true)
+      if no_device then
+        local opened, open_err = util.open_url(item.uri)
+        if opened then
+          callback(nil, "Opened Spotify; select the track again when the app is ready")
+        else
+          callback("Could not open Spotify: " .. tostring(open_err))
+        end
+        return
+      end
+      callback(err)
+    end
+  )
 end
 
 function Spotify:pause(callback)

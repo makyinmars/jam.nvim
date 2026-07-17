@@ -3,11 +3,11 @@ local util = require("jam.util")
 
 local M = {}
 
-local kind_icons = {
-  track = "♪",
-  album = "▣",
-  artist = "●",
-  playlist = "≡",
+local kind_labels = {
+  track = "TRACK",
+  album = "ALBUM",
+  artist = "ARTIST",
+  playlist = "PLAYLIST",
 }
 
 local function duration(milliseconds)
@@ -20,8 +20,8 @@ end
 
 local function entry_maker(item)
   local label = string.format(
-    "%s  %-36s  %s",
-    kind_icons[item.kind] or "·",
+    "%-8s  %-36s  %s",
+    kind_labels[item.kind] or "OTHER",
     item.name or "Unknown",
     item.subtitle or ""
   )
@@ -32,6 +32,22 @@ local function entry_maker(item)
       { item.name or "", item.subtitle or "", item.album or "", item.kind or "" },
       " "
     ),
+  }
+end
+
+local function album_entry_maker(item)
+  local position
+  if item.list_position then
+    position = string.format("%02d", item.list_position)
+  elseif (item.disc_number or 1) > 1 then
+    position = string.format("%d.%02d", item.disc_number, item.track_number or 0)
+  else
+    position = string.format("%02d", item.track_number or 0)
+  end
+  return {
+    value = item,
+    display = string.format("%-5s  %-36s  %s", position, item.name or "Unknown", item.subtitle or ""),
+    ordinal = table.concat({ item.name or "", item.subtitle or "", item.album or "" }, " "),
   }
 end
 
@@ -98,23 +114,44 @@ end
 
 local function previewer(artwork_config)
   local previewers = require("telescope.previewers")
+  local generation = 0
   return previewers.new_buffer_previewer({
     title = "Album",
     define_preview = function(self, entry)
+      generation = generation + 1
+      local current_generation = generation
       local item = entry.value
-      artwork.clear(self.state.bufnr)
-      vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, {
-        item.name or "Unknown",
-        item.subtitle or "",
-        item.album and ("Album: " .. item.album) or "",
-        item.kind and ("Type: " .. item.kind) or "",
-        item.duration_ms and ("Duration: " .. duration(item.duration_ms)) or "",
-        "",
-        item.image_url or "No album artwork",
-      })
-      artwork.render(self.state.bufnr, self.state.winid, item.image_url, artwork_config)
+      local buffer = self.state.bufnr
+      local window = self.state.winid
+      artwork.clear(buffer)
+      vim.api.nvim_buf_set_lines(buffer, 0, -1, false, {})
+      artwork.render(
+        buffer,
+        window,
+        item.image_url,
+        artwork_config,
+        function(err)
+          if
+            not err
+            or current_generation ~= generation
+            or not vim.api.nvim_buf_is_valid(buffer)
+          then
+            return
+          end
+          vim.api.nvim_buf_set_lines(buffer, 0, -1, false, {
+            item.name or "Unknown",
+            item.subtitle or "",
+            item.album and ("Album: " .. item.album) or "",
+            item.kind and ("Type: " .. item.kind) or "",
+            item.duration_ms and ("Duration: " .. duration(item.duration_ms)) or "",
+            "",
+            item.image_url or "No album artwork",
+          })
+        end
+      )
     end,
     teardown = function(self)
+      generation = generation + 1
       if self.state and self.state.bufnr then
         artwork.clear(self.state.bufnr)
       end
@@ -123,13 +160,99 @@ local function previewer(artwork_config)
 end
 
 local function run_action(provider, method, item, success)
-  provider[method](provider, item, function(err)
+  provider[method](provider, item, function(err, message)
     if err then
       util.notify(err, vim.log.levels.ERROR)
       return
     end
-    util.notify(success)
+    util.notify(type(message) == "string" and message or success)
   end)
+end
+
+local function refresh_after_resize(prompt_buffer, action_state)
+  local resize_generation = 0
+  vim.api.nvim_create_autocmd("VimResized", {
+    buffer = prompt_buffer,
+    callback = function()
+      resize_generation = resize_generation + 1
+      local generation = resize_generation
+      vim.defer_fn(function()
+        if generation == resize_generation and vim.api.nvim_buf_is_valid(prompt_buffer) then
+          local current_picker = action_state.get_current_picker(prompt_buffer)
+          if current_picker then
+            current_picker:refresh()
+          end
+        end
+      end, 75)
+    end,
+  })
+end
+
+local function open_tracks(provider, config, title, tracks, search_opts, search_query)
+  local pickers = require("telescope.pickers")
+  local finders = require("telescope.finders")
+  local actions = require("telescope.actions")
+  local action_state = require("telescope.actions.state")
+  local telescope_config = require("telescope.config").values
+  local picker_opts = vim.deepcopy(config.picker)
+
+  pickers
+    .new(picker_opts, {
+      prompt_title = title,
+      results_title = "Tracks",
+      finder = finders.new_table({
+        results = tracks,
+        entry_maker = album_entry_maker,
+      }),
+      sorter = telescope_config.generic_sorter(picker_opts),
+      previewer = previewer(config.artwork),
+      attach_mappings = function(prompt_buffer, map)
+        refresh_after_resize(prompt_buffer, action_state)
+
+        local function back_to_search()
+          actions.close(prompt_buffer)
+          vim.schedule(function()
+            local opts = vim.deepcopy(search_opts or {})
+            opts.default_text = search_query
+            M.open(provider, config, opts)
+          end)
+        end
+
+        actions.select_default:replace(function()
+          local selected = action_state.get_selected_entry()
+          if not selected then
+            return
+          end
+          actions.close(prompt_buffer)
+          run_action(provider, "play", selected.value, "Playing " .. selected.value.name)
+        end)
+
+        local function queue()
+          local selected = action_state.get_selected_entry()
+          if selected then
+            run_action(
+              provider,
+              "add_to_queue",
+              selected.value,
+              "Added to queue: " .. selected.value.name
+            )
+          end
+        end
+        local function pause()
+          provider:pause(function(err)
+            util.notify(err or "Playback paused", err and vim.log.levels.ERROR or nil)
+          end)
+        end
+        map("i", "<Esc>", back_to_search)
+        map("n", "<Esc>", back_to_search)
+        map("i", "<C-q>", queue)
+        map("n", "<C-q>", queue)
+        map("i", "<C-p>", pause)
+        map("n", "<C-p>", pause)
+        return true
+      end,
+    })
+    :find()
 end
 
 function M.open(provider, config, opts)
@@ -142,39 +265,58 @@ function M.open(provider, config, opts)
 
   local actions = require("telescope.actions")
   local action_state = require("telescope.actions.state")
-  local telescope_config = require("telescope.config").values
+  local sorters = require("telescope.sorters")
   local picker_opts = vim.tbl_deep_extend("force", config.picker, opts)
 
   pickers
     .new(picker_opts, {
       prompt_title = "jam.nvim · " .. config.provider,
       finder = async_finder(provider, config.search),
-      sorter = telescope_config.generic_sorter(picker_opts),
+      sorter = sorters.empty(),
       previewer = previewer(config.artwork),
       attach_mappings = function(prompt_buffer, map)
-        local resize_generation = 0
-        vim.api.nvim_create_autocmd("VimResized", {
-          buffer = prompt_buffer,
-          callback = function()
-            resize_generation = resize_generation + 1
-            local generation = resize_generation
-            vim.defer_fn(function()
-              if
-                generation == resize_generation
-                and vim.api.nvim_buf_is_valid(prompt_buffer)
-              then
-                local current_picker = action_state.get_current_picker(prompt_buffer)
-                if current_picker then
-                  current_picker:refresh()
-                end
-              end
-            end, 75)
-          end,
-        })
+        refresh_after_resize(prompt_buffer, action_state)
+        local loading_tracks = false
+
+        local function drill_down(item, method, title)
+          if loading_tracks then
+            return
+          end
+          loading_tracks = true
+          local search_query = action_state.get_current_line()
+          provider[method](provider, item, function(err, tracks)
+            loading_tracks = false
+            if err then
+              util.notify(err, vim.log.levels.ERROR)
+              return
+            end
+            if not vim.api.nvim_buf_is_valid(prompt_buffer) then
+              return
+            end
+            if #tracks == 0 then
+              util.notify("No tracks found for " .. item.name, vim.log.levels.WARN)
+              return
+            end
+            actions.close(prompt_buffer)
+            vim.schedule(function()
+              open_tracks(provider, config, title, tracks, opts, search_query)
+            end)
+          end)
+        end
 
         actions.select_default:replace(function()
           local selected = action_state.get_selected_entry()
           if not selected then
+            return
+          end
+          if selected.value.kind == "album" and provider.album_tracks then
+            local album = selected.value
+            drill_down(album, "album_tracks", "Album · " .. album.name)
+            return
+          end
+          if selected.value.kind == "artist" and provider.artist_top_tracks then
+            local artist = selected.value
+            drill_down(artist, "artist_top_tracks", "Artist · " .. artist.name .. " · Top Tracks")
             return
           end
           actions.close(prompt_buffer)

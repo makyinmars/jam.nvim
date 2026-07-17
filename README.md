@@ -9,6 +9,7 @@ Search Spotify and control playback from a Telescope picker without leaving Neov
 ## Features
 
 - Live, debounced Spotify search for tracks, albums, artists, and playlists
+- Album and artist drill-down for browsing album tracks and artist top tracks
 - Play, pause, skip, go back, and add tracks to the queue
 - OAuth Authorization Code flow with PKCE—no client secret in your config
 - Album-art previews through `image.nvim` or `chafa`, with automatic detection
@@ -34,7 +35,8 @@ configuration.
 Album artwork requires an optional renderer. Without one, the preview shows the
 image URL as text.
 
-- Install [`chafa`](https://hpjansson.org/chafa/) for a portable symbol preview
+- Install [`chafa`](https://hpjansson.org/chafa/) for a portable, full-color
+  character-art preview
   (`brew install chafa` on macOS or `sudo apt install chafa` on Debian/Ubuntu).
 - Or install [image.nvim](https://github.com/3rd/image.nvim) and use a compatible
   terminal such as Kitty or WezTerm.
@@ -138,9 +140,9 @@ Tokens are stored with `0600` permissions under Neovim's data directory. Run
 
 ### Troubleshooting
 
-- **`Device not found`**: Open Spotify, select a playback device, and manually
-  play a track once before retrying. Having the app open is not enough for the
-  Web API to consider the device active.
+- **`Device not found`**: jam.nvim opens the selected item in Spotify. Once the
+  app is ready, select the item again. If needed, manually play a track once so
+  the Web API considers the device active.
 - **Artwork URL instead of an image**: Install `chafa`, or configure `image.nvim`
   in a compatible terminal, then reopen the picker.
 - **Client ID is not configured**: Confirm `:echo $SPOTIFY_CLIENT_ID` prints your
@@ -164,13 +166,29 @@ Tokens are stored with `0600` permissions under Neovim's data directory. Run
 :Telescope jam
 ```
 
+Search filters:
+
+| Prefix | Searches |
+| --- | --- |
+| `a:` | Albums |
+| `t:` | Artists |
+| `s:` | Songs/tracks |
+
+For example, `a:Abbey Road`, `t:BTS`, or `s:One More Night`. Queries without a
+prefix search tracks, albums, artists, and playlists together.
+
 Picker mappings:
 
 | Mapping | Action |
 | --- | --- |
-| `<CR>` | Play selection |
+| `<CR>` | Open an album/artist or play the selected track/context |
 | `<C-q>` | Add selection to queue |
 | `<C-p>` | Pause playback |
+| `<Esc>` | Return from an album to the original search |
+
+Selecting an album opens its tracks in disc and track order. Selecting an artist
+opens their top tracks. Press `<Esc>` in either view to return to the same search
+query.
 
 ## Configuration
 
