@@ -159,33 +159,40 @@ local function previewer(artwork_config)
   })
 end
 
-local function run_action(provider, method, item, success)
+local function run_action(provider, method, item, success, on_success)
   provider[method](provider, item, function(err, message)
     if err then
       util.notify(err, vim.log.levels.ERROR)
       return
     end
     util.notify(type(message) == "string" and message or success)
+    if on_success then
+      on_success()
+    end
   end)
 end
 
-local function refresh_after_resize(prompt_buffer, action_state)
-  local resize_generation = 0
-  vim.api.nvim_create_autocmd("VimResized", {
-    buffer = prompt_buffer,
-    callback = function()
-      resize_generation = resize_generation + 1
-      local generation = resize_generation
-      vim.defer_fn(function()
-        if generation == resize_generation and vim.api.nvim_buf_is_valid(prompt_buffer) then
-          local current_picker = action_state.get_current_picker(prompt_buffer)
-          if current_picker then
-            current_picker:refresh()
-          end
-        end
-      end, 75)
-    end,
-  })
+local function show_queued(prompt_buffer, action_state)
+  if not vim.api.nvim_buf_is_valid(prompt_buffer) then
+    return
+  end
+  local ok, picker = pcall(action_state.get_current_picker, prompt_buffer)
+  if not ok or not picker then
+    return
+  end
+
+  local original_prefix = picker.prompt_prefix
+  local queued_prefix = "✓ QUEUED "
+  picker:change_prompt_prefix(queued_prefix, "MoreMsg")
+  vim.defer_fn(function()
+    if not vim.api.nvim_buf_is_valid(prompt_buffer) then
+      return
+    end
+    local current_ok, current_picker = pcall(action_state.get_current_picker, prompt_buffer)
+    if current_ok and current_picker == picker and picker.prompt_prefix == queued_prefix then
+      picker:change_prompt_prefix(original_prefix)
+    end
+  end, 1500)
 end
 
 local function open_tracks(provider, config, title, tracks, search_opts, search_query)
@@ -207,8 +214,6 @@ local function open_tracks(provider, config, title, tracks, search_opts, search_
       sorter = telescope_config.generic_sorter(picker_opts),
       previewer = previewer(config.artwork),
       attach_mappings = function(prompt_buffer, map)
-        refresh_after_resize(prompt_buffer, action_state)
-
         local function back_to_search()
           actions.close(prompt_buffer)
           vim.schedule(function()
@@ -234,13 +239,14 @@ local function open_tracks(provider, config, title, tracks, search_opts, search_
               provider,
               "add_to_queue",
               selected.value,
-              "Added to queue: " .. selected.value.name
+              "Added to queue: " .. selected.value.name,
+              function() show_queued(prompt_buffer, action_state) end
             )
           end
         end
         local function pause()
-          provider:pause(function(err)
-            util.notify(err or "Playback paused", err and vim.log.levels.ERROR or nil)
+          provider:pause(function(err, message)
+            util.notify(err or message or "Playback paused", err and vim.log.levels.ERROR or nil)
           end)
         end
         map("i", "<Esc>", back_to_search)
@@ -275,7 +281,6 @@ function M.open(provider, config, opts)
       sorter = sorters.empty(),
       previewer = previewer(config.artwork),
       attach_mappings = function(prompt_buffer, map)
-        refresh_after_resize(prompt_buffer, action_state)
         local loading_tracks = false
 
         local function drill_down(item, method, title)
@@ -330,13 +335,14 @@ function M.open(provider, config, opts)
               provider,
               "add_to_queue",
               selected.value,
-              "Added to queue: " .. selected.value.name
+              "Added to queue: " .. selected.value.name,
+              function() show_queued(prompt_buffer, action_state) end
             )
           end
         end
         local function pause()
-          provider:pause(function(err)
-            util.notify(err or "Playback paused", err and vim.log.levels.ERROR or nil)
+          provider:pause(function(err, message)
+            util.notify(err or message or "Playback paused", err and vim.log.levels.ERROR or nil)
           end)
         end
         map("i", "<C-q>", queue)

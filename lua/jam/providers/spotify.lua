@@ -205,22 +205,64 @@ function Spotify:play(item, callback)
 end
 
 function Spotify:pause(callback)
-  self:_request({ method = "PUT", url = API_URL .. "/me/player/pause" }, callback)
+  self:_request({ url = API_URL .. "/me/player" }, function(err, state)
+    if err then
+      callback(err)
+      return
+    end
+    if type(state) ~= "table" or not state.device then
+      callback("No active Spotify playback")
+      return
+    end
+    if not state.is_playing then
+      callback(nil, "Playback is already paused")
+      return
+    end
+    self:_request({ method = "PUT", url = API_URL .. "/me/player/pause" }, function(pause_err)
+      callback(pause_err, pause_err and nil or "Playback paused")
+    end)
+  end)
+end
+
+function Spotify:resume(callback)
+  self:_request({ url = API_URL .. "/me/player" }, function(err, state)
+    if err then
+      callback(err)
+      return
+    end
+    if type(state) ~= "table" or not state.device then
+      callback("No active Spotify playback")
+      return
+    end
+    if state.is_playing then
+      callback(nil, "Playback is already playing")
+      return
+    end
+    self:_request({ method = "PUT", url = API_URL .. "/me/player/play" }, function(play_err)
+      callback(play_err, play_err and nil or "Playback resumed")
+    end)
+  end)
 end
 
 function Spotify:next(callback)
-  self:_request({ method = "POST", url = API_URL .. "/me/player/next" }, callback)
+  self:_request({ method = "POST", url = API_URL .. "/me/player/next" }, function(err)
+    callback(err)
+  end)
 end
 
 function Spotify:previous(callback)
-  self:_request({ method = "POST", url = API_URL .. "/me/player/previous" }, callback)
+  self:_request({ method = "POST", url = API_URL .. "/me/player/previous" }, function(err)
+    callback(err)
+  end)
 end
 
 function Spotify:add_to_queue(item, callback)
   self:_request({
     method = "POST",
     url = API_URL .. "/me/player/queue?" .. util.query({ uri = item.uri }),
-  }, callback)
+  }, function(err)
+    callback(err)
+  end)
 end
 
 function Spotify:now_playing(callback)

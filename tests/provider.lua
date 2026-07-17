@@ -144,4 +144,60 @@ assert(not playback_error, playback_error)
 assert(opened_uri == "spotify:track:test-track")
 assert(playback_message:find("Opened Spotify", 1, true))
 
+http.request = function(_, callback)
+  callback(nil, "raw-spotify-response-id")
+end
+local queue_error
+local queue_message
+provider:add_to_queue({ uri = "spotify:track:test-track" }, function(err, message)
+  queue_error = err
+  queue_message = message
+end)
+assert(not queue_error, queue_error)
+assert(queue_message == nil)
+
+local pause_requests = 0
+http.request = function(_, callback)
+  pause_requests = pause_requests + 1
+  callback(nil, {
+    device = { id = "test-device" },
+    is_playing = false,
+  })
+end
+
+local pause_error
+local pause_message
+provider:pause(function(err, message)
+  pause_error = err
+  pause_message = message
+end)
+
+assert(not pause_error, pause_error)
+assert(pause_requests == 1)
+assert(pause_message == "Playback is already paused")
+
+local resume_requests = 0
+http.request = function(_, callback)
+  resume_requests = resume_requests + 1
+  if resume_requests == 1 then
+    callback(nil, {
+      device = { id = "test-device" },
+      is_playing = false,
+    })
+  else
+    callback(nil, "raw-spotify-response-id")
+  end
+end
+
+local resume_error
+local resume_message
+provider:resume(function(err, message)
+  resume_error = err
+  resume_message = message
+end)
+
+assert(not resume_error, resume_error)
+assert(resume_requests == 2)
+assert(resume_message == "Playback resumed")
+
 print("jam.nvim provider tests passed")

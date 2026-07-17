@@ -50,12 +50,13 @@ end
 
 function M.control(action)
   local active = provider()
-  if not active or not active[action] then
+  local method = action == "play" and "resume" or action
+  if not active or not active[method] then
     util.notify("Unsupported playback action: " .. action, vim.log.levels.ERROR)
     return
   end
-  active[action](active, function(err)
-    util.notify(err or ("Playback: " .. action), err and vim.log.levels.ERROR or nil)
+  active[method](active, function(err, message)
+    util.notify(err or message or ("Playback: " .. action), err and vim.log.levels.ERROR or nil)
   end)
 end
 
@@ -84,7 +85,12 @@ function M.command(args)
     M.auth()
   elseif command == "logout" then
     M.logout()
-  elseif command == "pause" or command == "next" or command == "previous" then
+  elseif
+    command == "play"
+    or command == "pause"
+    or command == "next"
+    or command == "previous"
+  then
     M.control(command)
   elseif command == "now-playing" then
     M.now_playing()
@@ -96,8 +102,17 @@ function M.command(args)
 end
 
 function M.complete(arg_lead)
-  local commands =
-    { "search", "auth", "logout", "pause", "next", "previous", "now-playing", "health" }
+  local commands = {
+    "search",
+    "auth",
+    "logout",
+    "play",
+    "pause",
+    "next",
+    "previous",
+    "now-playing",
+    "health",
+  }
   return vim.tbl_filter(function(command)
     return vim.startswith(command, arg_lead)
   end, commands)

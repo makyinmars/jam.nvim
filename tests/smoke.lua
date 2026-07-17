@@ -22,6 +22,8 @@ assert(provider.capabilities.artist_top_tracks)
 assert(provider.capabilities.artwork)
 
 assert(vim.fn.exists(":Jam") == 2)
+assert(vim.tbl_contains(jam.complete("p"), "play"))
+assert(vim.tbl_contains(jam.complete("p"), "pause"))
 assert(vim.tbl_contains(jam.complete("n"), "next"))
 assert(vim.tbl_contains(jam.complete("n"), "now-playing"))
 assert(require("telescope").extensions.jam ~= nil)

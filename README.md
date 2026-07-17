@@ -157,6 +157,7 @@ Tokens are stored with `0600` permissions under Neovim's data directory. Run
 :Jam                    " Open search
 :Jam search             " Open search
 :Jam auth spotify       " Connect Spotify
+:Jam play
 :Jam pause
 :Jam next
 :Jam previous

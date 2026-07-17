@@ -54,6 +54,7 @@ the app may not make it an active Spotify Connect device.
 :Jam search               Open the search picker.
 :Jam auth spotify         Authenticate with Spotify.
 :Jam logout               Remove stored Spotify credentials.
+:Jam play                 Resume playback.
 :Jam pause                Pause playback.
 :Jam next                 Skip to the next item.
 :Jam previous             Return to the previous item.
