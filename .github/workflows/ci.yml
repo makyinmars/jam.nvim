@@ -37,6 +37,15 @@ jobs:
             --cmd "set runtimepath^=$GITHUB_WORKSPACE" \
             -c "luafile tests/oauth.lua" \
             -c "quit"
+          nvim --headless -u NONE \
+            --cmd "set runtimepath^=$GITHUB_WORKSPACE" \
+            -c "luafile tests/provider.lua" \
+            -c "quit"
+          nvim --headless -u NONE \
+            --cmd "set runtimepath^=/tmp/plenary.nvim" \
+            --cmd "set runtimepath^=/tmp/telescope.nvim" \
+            --cmd "set runtimepath^=$GITHUB_WORKSPACE" \
+            -l tests/picker.lua
 
       - uses: JohnnyMorganz/stylua-action@v4
         with:
