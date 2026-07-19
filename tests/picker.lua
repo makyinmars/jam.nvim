@@ -7,6 +7,14 @@ local config = require("jam.config").setup({
 
 local search_requests = 0
 local provider = {
+  display_name = "Spotify",
+  capabilities = {
+    search = true,
+    live_search = true,
+    playback_control = true,
+    queue = true,
+    artwork = true,
+  },
   search = function(_, query, _, callback)
     search_requests = search_requests + 1
     local delay = query == "slow" and 400 or query == "fast" and 700 or 20
@@ -120,4 +128,102 @@ assert(
 )
 
 require("telescope.actions").close(prompt_buffer)
+
+local submit_requests = 0
+local opened_video
+local submit_provider = {
+  display_name = "YouTube Music",
+  capabilities = {
+    search = true,
+    open = true,
+    live_search = false,
+    artwork = true,
+  },
+  search = function(_, query, _, callback)
+    submit_requests = submit_requests + 1
+    callback(nil, {
+      {
+        id = "video-one",
+        uri = "https://music.youtube.com/watch?v=video-one",
+        kind = "video",
+        name = query .. " video",
+        subtitle = "Test Channel",
+      },
+    })
+  end,
+  open = function(_, item, callback)
+    opened_video = item.id
+    callback(nil, "Opened video")
+  end,
+}
+local submit_config = require("jam.config").setup({
+  provider = "youtube_music",
+  artwork = { enabled = false },
+})
+require("jam.ui.picker").open(submit_provider, submit_config, { default_text = "explicit" })
+
+local submit_buffer
+assert(
+  vim.wait(1000, function()
+    for _, buffer in ipairs(vim.api.nvim_list_bufs()) do
+      if vim.bo[buffer].filetype == "TelescopePrompt" and vim.fn.bufwinid(buffer) ~= -1 then
+        submit_buffer = buffer
+        return true
+      end
+    end
+    return false
+  end),
+  "explicit-submit Telescope prompt did not open"
+)
+vim.wait(400, function()
+  return false
+end)
+assert(submit_requests == 0, "submit-only provider searched while typing")
+vim.api.nvim_set_current_win(vim.fn.bufwinid(submit_buffer))
+local submit_mapping
+for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(submit_buffer, "i")) do
+  if mapping.lhs == "<C-S>" then
+    submit_mapping = mapping.callback
+    break
+  end
+end
+assert(submit_mapping, "submit-only provider did not map <C-s>")
+for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(submit_buffer, "i")) do
+  if mapping.lhs == "<C-Q>" or mapping.lhs == "<C-P>" then
+    assert(
+      not (mapping.desc or ""):find("lua/jam/ui/picker.lua", 1, true),
+      "submit-only provider mapped an unsupported playback action"
+    )
+  end
+end
+submit_mapping()
+assert(
+  vim.wait(1000, function()
+    return submit_requests == 1
+  end),
+  "submit-only provider did not search after <C-s>"
+)
+local submit_picker = action_state.get_current_picker(submit_buffer)
+assert(
+  vim.wait(1000, function()
+    return submit_picker.manager:num_results() == 1
+  end),
+  "submitted search results did not populate"
+)
+assert(
+  table
+    .concat(vim.api.nvim_buf_get_lines(submit_picker.results_bufnr, 0, -1, false), "\n")
+    :find("VIDEO", 1, true),
+  "YouTube video result was not labelled VIDEO"
+)
+local select_mapping
+for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(submit_buffer, "i")) do
+  if mapping.lhs == "<CR>" then
+    select_mapping = mapping.callback
+    break
+  end
+end
+assert(select_mapping, "search picker did not map selection")
+select_mapping()
+assert(opened_video == "video-one", "provider open action was not used for a selected video")
 print("jam.nvim picker tests passed")

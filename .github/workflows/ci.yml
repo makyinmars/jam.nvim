@@ -42,6 +42,10 @@ jobs:
             -c "luafile tests/provider.lua" \
             -c "quit"
           nvim --headless -u NONE \
+            --cmd "set runtimepath^=$GITHUB_WORKSPACE" \
+            -c "luafile tests/youtube_music.lua" \
+            -c "quit"
+          nvim --headless -u NONE \
             --cmd "set runtimepath^=/tmp/plenary.nvim" \
             --cmd "set runtimepath^=/tmp/telescope.nvim" \
             --cmd "set runtimepath^=$GITHUB_WORKSPACE" \

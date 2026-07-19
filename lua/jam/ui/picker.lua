@@ -1,4 +1,5 @@
 local artwork = require("jam.ui.artwork")
+local providers = require("jam.providers")
 local util = require("jam.util")
 
 local M = {}
@@ -10,6 +11,7 @@ local kind_labels = {
   playlist = "PLAYLIST",
   show = "PODCAST",
   episode = "EPISODE",
+  video = "VIDEO",
 }
 
 local function duration(milliseconds)
@@ -59,7 +61,13 @@ local function media_entry_maker(item)
 end
 
 local function async_finder(provider, search_config)
-  local finder = { generation = 0, timer = nil, closed = false }
+  local live_search = providers.supports(provider, "live_search")
+  local finder = {
+    generation = 0,
+    timer = nil,
+    closed = false,
+    submitted_query = nil,
+  }
 
   local function close_timer(timer)
     if not timer or timer:is_closing() then
@@ -76,6 +84,10 @@ local function async_finder(provider, search_config)
     close_timer(timer)
   end
 
+  function finder:submit(prompt)
+    self.submitted_query = vim.trim(prompt or "")
+  end
+
   return setmetatable(finder, {
     __call = function(self, prompt, process_result, process_complete)
       self.generation = self.generation + 1
@@ -83,14 +95,20 @@ local function async_finder(provider, search_config)
       local previous_timer = self.timer
       self.timer = nil
       close_timer(previous_timer)
-      if not prompt or vim.trim(prompt) == "" then
+      prompt = prompt and vim.trim(prompt) or ""
+      if prompt == "" then
+        process_complete()
+        return
+      end
+
+      if not live_search and prompt ~= self.submitted_query then
         process_complete()
         return
       end
 
       local timer = vim.uv.new_timer()
       self.timer = timer
-      timer:start(search_config.debounce_ms, 0, function()
+      timer:start(live_search and (search_config.debounce_ms or 250) or 0, 0, function()
         if self.timer == timer then
           self.timer = nil
         end
@@ -335,6 +353,14 @@ local function run_action(provider, method, item, success, on_success)
   end)
 end
 
+local function run_item_action(provider, item)
+  if providers.supports(provider, "open") and provider.open then
+    run_action(provider, "open", item, "Opened " .. item.name)
+  elseif providers.supports(provider, "playback_control") and provider.play then
+    run_action(provider, "play", item, "Playing " .. item.name)
+  end
+end
+
 local function show_queued(prompt_buffer, action_state)
   if not vim.api.nvim_buf_is_valid(prompt_buffer) then
     return
@@ -358,6 +384,37 @@ local function show_queued(prompt_buffer, action_state)
   end, 1500)
 end
 
+local function map_playback_actions(provider, map, prompt_buffer, action_state)
+  if providers.supports(provider, "queue") and provider.add_to_queue then
+    local function queue()
+      local selected = action_state.get_selected_entry()
+      if selected then
+        run_action(
+          provider,
+          "add_to_queue",
+          selected.value,
+          "Added to queue: " .. selected.value.name,
+          function()
+            show_queued(prompt_buffer, action_state)
+          end
+        )
+      end
+    end
+    map("i", "<C-q>", queue)
+    map("n", "<C-q>", queue)
+  end
+
+  if providers.supports(provider, "playback_control") and provider.pause then
+    local function pause()
+      provider:pause(function(err, message)
+        util.notify(err or message or "Playback paused", err and vim.log.levels.ERROR or nil)
+      end)
+    end
+    map("i", "<C-p>", pause)
+    map("n", "<C-p>", pause)
+  end
+end
+
 local function open_items(provider, config, title, results_title, items, search_opts, search_query)
   local pickers = require("telescope.pickers")
   local finders = require("telescope.finders")
@@ -375,7 +432,7 @@ local function open_items(provider, config, title, results_title, items, search_
         entry_maker = media_entry_maker,
       }),
       sorter = telescope_config.generic_sorter(picker_opts),
-      previewer = previewer(config.artwork),
+      previewer = providers.supports(provider, "artwork") and previewer(config.artwork) or false,
       attach_mappings = function(prompt_buffer, map)
         local function back_to_search()
           actions.close(prompt_buffer)
@@ -392,34 +449,11 @@ local function open_items(provider, config, title, results_title, items, search_
             return
           end
           actions.close(prompt_buffer)
-          run_action(provider, "play", selected.value, "Playing " .. selected.value.name)
+          run_item_action(provider, selected.value)
         end)
-
-        local function queue()
-          local selected = action_state.get_selected_entry()
-          if selected then
-            run_action(
-              provider,
-              "add_to_queue",
-              selected.value,
-              "Added to queue: " .. selected.value.name,
-              function()
-                show_queued(prompt_buffer, action_state)
-              end
-            )
-          end
-        end
-        local function pause()
-          provider:pause(function(err, message)
-            util.notify(err or message or "Playback paused", err and vim.log.levels.ERROR or nil)
-          end)
-        end
         map("i", "<Esc>", back_to_search)
         map("n", "<Esc>", back_to_search)
-        map("i", "<C-q>", queue)
-        map("n", "<C-q>", queue)
-        map("i", "<C-p>", pause)
-        map("n", "<C-p>", pause)
+        map_playback_actions(provider, map, prompt_buffer, action_state)
         return true
       end,
     })
@@ -438,15 +472,28 @@ function M.open(provider, config, opts)
   local action_state = require("telescope.actions.state")
   local sorters = require("telescope.sorters")
   local picker_opts = vim.tbl_deep_extend("force", config.picker, opts)
+  local provider_config = (config.providers or {})[config.provider] or {}
+  local search_config = provider.config and provider.config.search
+    or provider_config.search
+    or config.search
+    or {}
+  local finder = async_finder(provider, search_config)
 
   pickers
     .new(picker_opts, {
-      prompt_title = "jam.nvim · " .. config.provider,
-      finder = async_finder(provider, config.search),
+      prompt_title = "jam.nvim · " .. (provider.display_name or config.provider),
+      results_title = (provider.display_name or config.provider) .. " results",
+      finder = finder,
       sorter = sorters.empty(),
-      previewer = previewer(config.artwork),
+      previewer = providers.supports(provider, "artwork") and previewer(config.artwork) or false,
       attach_mappings = function(prompt_buffer, map)
         local loading_tracks = false
+
+        local function submit_search()
+          finder = async_finder(provider, search_config)
+          finder:submit(action_state.get_current_line())
+          action_state.get_current_picker(prompt_buffer):refresh(finder, { reset_prompt = false })
+        end
 
         local function drill_down(item, method, title, results_title)
           if loading_tracks then
@@ -480,14 +527,25 @@ function M.open(provider, config, opts)
         actions.select_default:replace(function()
           local selected = action_state.get_selected_entry()
           if not selected then
+            if not providers.supports(provider, "live_search") then
+              submit_search()
+            end
             return
           end
-          if selected.value.kind == "album" and provider.album_tracks then
+          if
+            selected.value.kind == "album"
+            and providers.supports(provider, "album_tracks")
+            and provider.album_tracks
+          then
             local album = selected.value
             drill_down(album, "album_tracks", "Album · " .. album.name, "Tracks")
             return
           end
-          if selected.value.kind == "artist" and provider.artist_top_tracks then
+          if
+            selected.value.kind == "artist"
+            and providers.supports(provider, "artist_top_tracks")
+            and provider.artist_top_tracks
+          then
             local artist = selected.value
             drill_down(
               artist,
@@ -497,38 +555,23 @@ function M.open(provider, config, opts)
             )
             return
           end
-          if selected.value.kind == "show" and provider.show_episodes then
+          if
+            selected.value.kind == "show"
+            and providers.supports(provider, "show_episodes")
+            and provider.show_episodes
+          then
             local show = selected.value
             drill_down(show, "show_episodes", "Podcast · " .. show.name, "Episodes")
             return
           end
           actions.close(prompt_buffer)
-          run_action(provider, "play", selected.value, "Playing " .. selected.value.name)
+          run_item_action(provider, selected.value)
         end)
-
-        local function queue()
-          local selected = action_state.get_selected_entry()
-          if selected then
-            run_action(
-              provider,
-              "add_to_queue",
-              selected.value,
-              "Added to queue: " .. selected.value.name,
-              function()
-                show_queued(prompt_buffer, action_state)
-              end
-            )
-          end
+        map_playback_actions(provider, map, prompt_buffer, action_state)
+        if not providers.supports(provider, "live_search") then
+          map("i", "<C-s>", submit_search)
+          map("n", "<C-s>", submit_search)
         end
-        local function pause()
-          provider:pause(function(err, message)
-            util.notify(err or message or "Playback paused", err and vim.log.levels.ERROR or nil)
-          end)
-        end
-        map("i", "<C-q>", queue)
-        map("n", "<C-q>", queue)
-        map("i", "<C-p>", pause)
-        map("n", "<C-p>", pause)
         return true
       end,
     })

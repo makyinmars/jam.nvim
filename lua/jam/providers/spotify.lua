@@ -6,8 +6,12 @@ Spotify.__index = Spotify
 
 Spotify.capabilities = {
   search = true,
-  playback = true,
+  open = false,
+  live_search = true,
+  auth = true,
+  playback_control = true,
   queue = true,
+  now_playing = true,
   playlists = true,
   album_tracks = true,
   artist_top_tracks = true,
@@ -78,7 +82,21 @@ local function normalize(item, kind)
 end
 
 function Spotify.new(config, auth)
-  return setmetatable({ config = config, auth = auth }, Spotify)
+  return setmetatable({ config = config, auth = auth, display_name = "Spotify" }, Spotify)
+end
+
+function Spotify:health(health)
+  if vim.fn.executable("openssl") == 1 then
+    health.ok("openssl is executable")
+  else
+    health.error("openssl is required for Spotify PKCE authentication")
+  end
+
+  if self.config.client_id and self.config.client_id ~= "" then
+    health.ok("Spotify client ID is configured")
+  else
+    health.warn("Spotify client ID is not configured")
+  end
 end
 
 function Spotify:_request(opts, callback)

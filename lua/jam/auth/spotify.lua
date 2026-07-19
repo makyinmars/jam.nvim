@@ -208,7 +208,9 @@ function SpotifyAuth:login(callback)
           code = params.code,
           redirect_uri = self.config.redirect_uri,
           code_verifier = verifier,
-        }, callback)
+        }, function(exchange_err)
+          callback(exchange_err, exchange_err and nil or "Spotify connected")
+        end)
       end)
     end)
   end)

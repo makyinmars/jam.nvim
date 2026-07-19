@@ -1,14 +1,17 @@
 # jam.nvim
 
-Search Spotify and control playback from a Telescope picker without leaving Neovim.
+Search Spotify or YouTube's music-video category from Telescope. Control Spotify
+playback in Neovim, or open YouTube results in the first-party YouTube Music app.
 
 > [!NOTE]
-> jam.nvim is an early preview. Spotify is the first provider, and support for
-> additional music services is planned as their official APIs allow.
+> jam.nvim is an early preview. Provider features differ according to the
+> capabilities exposed by each service's official APIs.
 
 ## Features
 
 - Live Spotify search for music, playlists, podcasts, and episodes
+- Explicit-submit YouTube music-video search with exact-query caching
+- YouTube-attributed results that open in YouTube Music, with a YouTube fallback
 - Drill-down for album tracks, artist top tracks, and podcast episodes
 - Play, pause, skip, go back, and add tracks or episodes to the queue
 - OAuth Authorization Code flow with PKCE—no client secret in your config
@@ -23,10 +26,16 @@ Required:
 
 - Neovim 0.10+
 - [telescope.nvim](https://github.com/nvim-telescope/telescope.nvim)
-- `curl` for Spotify API requests
-- `openssl` for PKCE authentication
-- A Spotify account and [application client ID](#create-a-spotify-application)
-- Spotify Premium and an active Spotify Connect device for playback control
+- `curl` for provider API requests
+
+Spotify additionally requires `openssl` for PKCE authentication, a Spotify
+account and [application client ID](#create-a-spotify-application), and Spotify
+Premium with an active Spotify Connect device for playback control.
+
+YouTube Music search requires a Google Cloud API key with the YouTube Data API
+v3 enabled. It does not require Google login. The integration searches public
+videos in YouTube's Music category; it is not a YouTube Music catalog, library,
+queue, or playback-control API.
 
 Run `:checkhealth jam` after installation to verify these dependencies and your
 configuration.
@@ -153,6 +162,44 @@ Then call `require("jam").setup(...)` from your Lua config.
 Tokens are stored with `0600` permissions under Neovim's data directory. Run
 `:Jam logout` to remove them.
 
+## YouTube Music setup
+
+1. Create or select a project in Google Cloud and enable **YouTube Data API v3**.
+2. Create an API key restricted to the YouTube Data API. Keep the key out of the
+   repository and do not share it between jam.nvim users.
+3. Put the key in your shell environment:
+
+   ```sh
+   export YOUTUBE_API_KEY="your-api-key"
+   ```
+
+4. Select the provider in your Neovim config:
+
+   ```lua
+   require("jam").setup({
+     provider = "youtube_music",
+     providers = {
+       youtube_music = {
+         api_key = vim.env.YOUTUBE_API_KEY,
+         region_code = "US", -- optional ISO 3166-1 alpha-2 code
+         relevance_language = "en", -- optional language hint
+       },
+     },
+   })
+   ```
+
+5. Run `:checkhealth jam`, open `:Jam`, enter a query, and press `<C-s>` or
+   `<CR>` when no result is selected. Selecting a result opens it in YouTube
+   Music. Set `open_host = "www.youtube.com"` to always use regular YouTube.
+
+The `music.youtube.com/watch` handoff is a best-effort web route, not a documented
+Google integration API. Use regular YouTube if the Music host does not handle a
+video reliably on your platform or in your region.
+
+Search requests have a limited daily quota, so YouTube search never runs on
+each keystroke. Repeating the exact query in the same Neovim session uses a
+memory cache.
+
 ### Troubleshooting
 
 - **`Device not found`**: jam.nvim opens the selected item in Spotify. Once the
@@ -203,6 +250,7 @@ Picker mappings:
 | `<C-q>` | Add selection to queue |
 | `<C-p>` | Pause playback |
 | `<Esc>` | Return from a collection to the original search |
+| `<C-s>` | Submit a YouTube music-video search |
 
 Selecting an album opens its tracks in disc and track order. Selecting an artist
 opens their top tracks, and selecting a podcast opens its episodes. Press `<Esc>`
@@ -213,11 +261,6 @@ in any collection view to return to the same search query.
 ```lua
 require("jam").setup({
   provider = "spotify",
-  search = {
-    debounce_ms = 250,
-    limit = 30,
-    types = { "track", "album", "artist", "playlist", "show", "episode" },
-  },
   artwork = {
     enabled = true,
     backend = "auto", -- auto, image, chafa, text, or none
@@ -232,6 +275,20 @@ require("jam").setup({
     spotify = {
       client_id = vim.env.SPOTIFY_CLIENT_ID,
       redirect_uri = "http://127.0.0.1:8765/callback",
+      search = {
+        debounce_ms = 250,
+        limit = 30,
+        mode = "live",
+        types = { "track", "album", "artist", "playlist", "show", "episode" },
+      },
+    },
+    youtube_music = {
+      api_key = vim.env.YOUTUBE_API_KEY,
+      region_code = nil,
+      relevance_language = nil,
+      open_host = "music.youtube.com",
+      fallback_host = "www.youtube.com",
+      search = { limit = 20, mode = "submit" },
     },
   },
 })
@@ -239,13 +296,13 @@ require("jam").setup({
 
 ## Provider roadmap
 
-Provider adapters declare capabilities and implement the common search and
-playback interface. The Telescope UI does not call Spotify-specific endpoints,
-so additional providers can expose only the capabilities their APIs support.
+Provider adapters declare capabilities, and commands, completion, picker actions,
+and health checks follow those declarations. Spotify supports authentication,
+live search, collection drill-down, queueing, and playback control. The
+`youtube_music` provider only searches YouTube's public Music video category and
+opens a selected video; playback, queue, now-playing, authentication, and private
+playlists are intentionally unsupported.
 
-Spotify is currently the only implemented provider. More providers are planned,
-but no specific service or timeline is promised: authentication, catalog access,
-and playback controls vary significantly between platforms, and some services
-do not offer an official public playback API. Future adapters may therefore
-support search, opening items in a native app, or playback controls in different
-combinations.
+jam.nvim uses the documented YouTube Data API. It does not scrape YouTube Music,
+call private endpoints, extract media streams, or control an existing browser
+tab.

@@ -1,5 +1,6 @@
 local config = require("jam.config")
 local artwork = require("jam.ui.artwork")
+local providers = require("jam.providers")
 
 local M = {}
 
@@ -24,19 +25,15 @@ function M.check()
     vim.health.error("curl is required for provider API requests")
   end
 
-  if vim.fn.executable("openssl") == 1 then
-    vim.health.ok("openssl is executable")
+  local ok, active = pcall(providers.get, config.values.provider, config.values)
+  if ok and active.health then
+    vim.health.start(active.display_name)
+    active:health(vim.health)
   else
-    vim.health.error("openssl is required for Spotify PKCE authentication")
+    vim.health.error(ok and (active.display_name .. " does not provide health checks") or active)
   end
 
-  local spotify = config.values.providers.spotify
-  if spotify.client_id and spotify.client_id ~= "" then
-    vim.health.ok("Spotify client ID is configured")
-  else
-    vim.health.warn("Spotify client ID is not configured")
-  end
-
+  vim.health.start("Artwork")
   local backend, reason = artwork.detect(config.values.artwork)
   if backend == "text" or backend == "none" then
     vim.health.warn("Artwork backend: " .. backend .. " (" .. reason .. ")")

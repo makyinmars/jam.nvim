@@ -11,15 +11,16 @@ CONTENTS                                                        *jam-contents*
 ==============================================================================
 1. INTRODUCTION                                                    *jam-intro*
 
-jam.nvim provides a Telescope interface for music search and playback. Spotify
-is currently the only provider.
+jam.nvim provides a Telescope interface for Spotify search and playback, plus
+public YouTube music-video search with a YouTube Music handoff.
 
 Requirements:
   - Neovim 0.10 or newer
   - telescope.nvim
   - curl
-  - openssl
-  - Spotify Premium and an active Spotify Connect device for playback control
+  - openssl, Spotify Premium, and an active Spotify Connect device for Spotify
+    playback control
+  - A YouTube Data API v3 key for YouTube music-video search
 
 Album artwork additionally requires chafa, or image.nvim in a compatible
 terminal. Without either renderer, the preview displays the artwork URL.
@@ -46,6 +47,23 @@ Run `:checkhealth jam`, then `:Jam auth spotify` to connect your account. Open
 Spotify and play something once before using playback controls; merely opening
 the app may not make it an active Spotify Connect device.
 
+For YouTube music-video search, enable YouTube Data API v3 for a Google Cloud
+project, create an API key restricted to that API, and configure:
+>
+  require("jam").setup({
+    provider = "youtube_music",
+    providers = {
+      youtube_music = {
+        api_key = vim.env.YOUTUBE_API_KEY,
+        region_code = "US", -- optional
+        relevance_language = "en", -- optional
+      },
+    },
+  })
+<
+This searches YouTube's public Music video category. It is not a YouTube Music
+catalog, library, queue, or playback-control API.
+
 ==============================================================================
 3. COMMANDS                                                      *jam-commands*
 
@@ -70,6 +88,13 @@ selected track or episode. Albums open in disc and track order, artists open to
 their top tracks, and podcasts open to their episodes. In a collection picker,
 <CR> plays the selected item and <Esc> returns to the original search. CTRL-Q
 queues the selected item and CTRL-P pauses playback.
+
+The YouTube provider uses explicit submit to protect the API's limited search
+quota. Enter a query and press CTRL-S, or press <CR> when no result is selected.
+Results are labelled VIDEO and attributed to YouTube Music. Selecting one opens
+it in YouTube Music, falling back to regular YouTube when opening the configured
+host fails. Exact queries are cached for the current Neovim session. YouTube
+does not map queue or playback actions.
 
 The picker can also be opened after loading the Telescope extension:
 >
