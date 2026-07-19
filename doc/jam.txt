@@ -91,10 +91,13 @@ queues the selected item and CTRL-P pauses playback.
 
 The YouTube provider uses explicit submit to protect the API's limited search
 quota. Enter a query and press CTRL-S, or press <CR> when no result is selected.
-Results are labelled VIDEO and attributed to YouTube Music. Selecting one opens
-it in YouTube Music, falling back to regular YouTube when opening the configured
-host fails. Exact queries are cached for the current Neovim session. YouTube
-does not map queue or playback actions.
+The results title shows "Loading…" while the request is in flight. Results are
+labelled VIDEO and attributed to YouTube Music. Press CTRL-T to toggle whether
+the selected result opens in YouTube Music or regular YouTube; the current
+target is shown in the picker title. The configured open_host chooses the
+initial target, and YouTube remains the fallback when the Music host fails.
+Exact queries are cached for the current Neovim session. YouTube does not map
+queue or playback actions.
 
 The picker can also be opened after loading the Telescope extension:
 >

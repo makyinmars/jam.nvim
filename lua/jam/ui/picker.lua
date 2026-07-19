@@ -88,6 +88,16 @@ local function async_finder(provider, search_config)
     self.submitted_query = vim.trim(prompt or "")
   end
 
+  function finder:set_status_handler(handler)
+    self.status_handler = handler
+  end
+
+  function finder:set_status(status)
+    if self.status_handler then
+      self.status_handler(status)
+    end
+  end
+
   return setmetatable(finder, {
     __call = function(self, prompt, process_result, process_complete)
       self.generation = self.generation + 1
@@ -97,11 +107,13 @@ local function async_finder(provider, search_config)
       close_timer(previous_timer)
       prompt = prompt and vim.trim(prompt) or ""
       if prompt == "" then
+        self:set_status("idle")
         process_complete()
         return
       end
 
       if not live_search and prompt ~= self.submitted_query then
+        self:set_status("idle")
         process_complete()
         return
       end
@@ -114,10 +126,12 @@ local function async_finder(provider, search_config)
         end
         close_timer(timer)
         vim.schedule(function()
+          self:set_status("loading")
           provider:search(prompt, search_config, function(err, results)
             if self.closed or generation ~= self.generation then
               return
             end
+            self:set_status("idle")
             if err then
               util.notify(err, vim.log.levels.ERROR)
               process_complete()
@@ -353,9 +367,13 @@ local function run_action(provider, method, item, success, on_success)
   end)
 end
 
-local function run_item_action(provider, item)
+local function run_item_action(provider, item, open_target)
   if providers.supports(provider, "open") and provider.open then
-    run_action(provider, "open", item, "Opened " .. item.name)
+    local open_item = item
+    if open_target then
+      open_item = vim.tbl_extend("force", {}, item, { open_target = open_target })
+    end
+    run_action(provider, "open", open_item, "Opened " .. item.name)
   elseif providers.supports(provider, "playback_control") and provider.play then
     run_action(provider, "play", item, "Playing " .. item.name)
   end
@@ -478,21 +496,84 @@ function M.open(provider, config, opts)
     or config.search
     or {}
   local finder = async_finder(provider, search_config)
+  local provider_name = provider.display_name or config.provider
+  local prompt_title = "jam.nvim · " .. provider_name
+  local results_title = provider_name .. " results"
+  local open_targets = provider.open_targets or {}
+  local open_target_index
+  for index, target in ipairs(open_targets) do
+    if target.id == provider.default_open_target then
+      open_target_index = index
+      break
+    end
+  end
+  if #open_targets > 1 then
+    open_target_index = open_target_index or 1
+  end
+  local search_status = "idle"
+
+  local function current_open_target()
+    return open_target_index and open_targets[open_target_index] or nil
+  end
+
+  local function title_suffix()
+    local target = current_open_target()
+    return target and (" · Open: " .. target.label) or ""
+  end
+
+  local function current_prompt_title()
+    return prompt_title .. title_suffix()
+  end
+
+  local function current_results_title()
+    local loading = search_status == "loading" and " · Loading…" or ""
+    return results_title .. title_suffix() .. loading
+  end
 
   pickers
     .new(picker_opts, {
-      prompt_title = "jam.nvim · " .. (provider.display_name or config.provider),
-      results_title = (provider.display_name or config.provider) .. " results",
+      prompt_title = current_prompt_title(),
+      results_title = current_results_title(),
       finder = finder,
       sorter = sorters.empty(),
       previewer = providers.supports(provider, "artwork") and previewer(config.artwork) or false,
       attach_mappings = function(prompt_buffer, map)
         local loading_tracks = false
 
+        local function update_titles()
+          if not vim.api.nvim_buf_is_valid(prompt_buffer) then
+            return
+          end
+          local picker = action_state.get_current_picker(prompt_buffer)
+          picker.prompt_title = current_prompt_title()
+          picker.results_title = current_results_title()
+          if picker.layout and picker.layout.prompt and picker.layout.prompt.border then
+            picker.layout.prompt.border:change_title(picker.prompt_title)
+          end
+          if picker.layout and picker.layout.results and picker.layout.results.border then
+            picker.layout.results.border:change_title(picker.results_title)
+          end
+        end
+
+        local function bind_status_handler(bound_finder)
+          bound_finder:set_status_handler(function(status)
+            search_status = status
+            update_titles()
+          end)
+        end
+
+        bind_status_handler(finder)
+
         local function submit_search()
           finder = async_finder(provider, search_config)
+          bind_status_handler(finder)
           finder:submit(action_state.get_current_line())
           action_state.get_current_picker(prompt_buffer):refresh(finder, { reset_prompt = false })
+        end
+
+        local function toggle_open_target()
+          open_target_index = (open_target_index % #open_targets) + 1
+          update_titles()
         end
 
         local function drill_down(item, method, title, results_title)
@@ -565,9 +646,14 @@ function M.open(provider, config, opts)
             return
           end
           actions.close(prompt_buffer)
-          run_item_action(provider, selected.value)
+          local target = current_open_target()
+          run_item_action(provider, selected.value, target and target.id or nil)
         end)
         map_playback_actions(provider, map, prompt_buffer, action_state)
+        if #open_targets > 1 then
+          map("i", "<C-t>", toggle_open_target)
+          map("n", "<C-t>", toggle_open_target)
+        end
         if not providers.supports(provider, "live_search") then
           map("i", "<C-s>", submit_search)
           map("n", "<C-s>", submit_search)

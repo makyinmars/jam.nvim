@@ -24,6 +24,11 @@ YouTubeMusic.unsupported_messages = {
   now_playing = "YouTube Music hands playback to the first-party app and cannot report now-playing status",
 }
 
+YouTubeMusic.open_targets = {
+  { id = "music", label = "YouTube Music", host = "music.youtube.com" },
+  { id = "video", label = "YouTube", host = "www.youtube.com" },
+}
+
 local API_URL = "https://www.googleapis.com/youtube/v3"
 
 local function duration_ms(duration)
@@ -49,6 +54,42 @@ local function watch_url(host, id)
   return "https://" .. host .. "/watch?v=" .. util.urlencode(id)
 end
 
+local html_entities = {
+  amp = "&",
+  apos = "'",
+  gt = ">",
+  lt = "<",
+  quot = '"',
+}
+
+local function decode_html(value)
+  if type(value) ~= "string" then
+    return value
+  end
+  return (
+    value:gsub("&(#?[xX]?[%w]+);", function(entity)
+      local replacement = html_entities[entity]
+      if replacement then
+        return replacement
+      end
+
+      local number
+      if entity:sub(1, 2):lower() == "#x" then
+        number = tonumber(entity:sub(3), 16)
+      elseif entity:sub(1, 1) == "#" then
+        number = tonumber(entity:sub(2), 10)
+      end
+      if number then
+        local ok, character = pcall(vim.fn.nr2char, number)
+        if ok and character ~= "" then
+          return character
+        end
+      end
+      return "&" .. entity .. ";"
+    end)
+  )
+end
+
 local function has_quota_reason(value)
   if type(value) ~= "table" then
     return false
@@ -65,12 +106,14 @@ local function has_quota_reason(value)
 end
 
 function YouTubeMusic.new(config)
+  config = config or {}
   return setmetatable({
-    config = config or {},
+    config = config,
     display_name = "YouTube Music",
+    default_open_target = config.open_host == "www.youtube.com" and "video" or "music",
     query_cache = {},
     query_waiters = {},
-    music_category_id = config and config.category_id or nil,
+    music_category_id = config.category_id,
     category_waiters = nil,
   }, YouTubeMusic)
 end
@@ -152,9 +195,9 @@ function YouTubeMusic:_normalize(search_item, video)
     service_kind = "youtube_video",
     uri = external_url,
     external_url = external_url,
-    name = snippet.title,
-    subtitle = snippet.channelTitle,
-    description = snippet.description,
+    name = decode_html(snippet.title),
+    subtitle = decode_html(snippet.channelTitle),
+    description = decode_html(snippet.description),
     image_url = thumbnail_url(snippet.thumbnails),
     release_date = snippet.publishedAt,
     duration_ms = duration_ms(content.duration),
@@ -257,7 +300,15 @@ function YouTubeMusic:open(item, callback)
     callback("A YouTube video ID is required")
     return
   end
-  local primary_url = item.external_url
+  local selected_host
+  for _, target in ipairs(self.open_targets) do
+    if target.id == item.open_target then
+      selected_host = target.host
+      break
+    end
+  end
+  local primary_url = selected_host and watch_url(selected_host, item.id)
+    or item.external_url
     or watch_url(self.config.open_host or "music.youtube.com", item.id)
   local opened, open_err = util.open_url(primary_url)
   if opened then

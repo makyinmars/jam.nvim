@@ -131,8 +131,15 @@ require("telescope.actions").close(prompt_buffer)
 
 local submit_requests = 0
 local opened_video
+local opened_target
+local pending_submit_callback
 local submit_provider = {
   display_name = "YouTube Music",
+  default_open_target = "music",
+  open_targets = {
+    { id = "music", label = "YouTube Music" },
+    { id = "video", label = "YouTube" },
+  },
   capabilities = {
     search = true,
     open = true,
@@ -141,18 +148,21 @@ local submit_provider = {
   },
   search = function(_, query, _, callback)
     submit_requests = submit_requests + 1
-    callback(nil, {
-      {
-        id = "video-one",
-        uri = "https://music.youtube.com/watch?v=video-one",
-        kind = "video",
-        name = query .. " video",
-        subtitle = "Test Channel",
-      },
-    })
+    pending_submit_callback = function()
+      callback(nil, {
+        {
+          id = "video-one",
+          uri = "https://music.youtube.com/watch?v=video-one",
+          kind = "video",
+          name = query .. " video",
+          subtitle = "Test Channel",
+        },
+      })
+    end
   end,
   open = function(_, item, callback)
     opened_video = item.id
+    opened_target = item.open_target
     callback(nil, "Opened video")
   end,
 }
@@ -205,10 +215,19 @@ assert(
 )
 local submit_picker = action_state.get_current_picker(submit_buffer)
 assert(
+  submit_picker.results_title:find("Loading", 1, true),
+  "submitted search did not show a loading state"
+)
+pending_submit_callback()
+assert(
   vim.wait(1000, function()
     return submit_picker.manager:num_results() == 1
   end),
   "submitted search results did not populate"
+)
+assert(
+  not submit_picker.results_title:find("Loading", 1, true),
+  "loading state did not clear after search"
 )
 assert(
   table
@@ -217,13 +236,23 @@ assert(
   "YouTube video result was not labelled VIDEO"
 )
 local select_mapping
+local toggle_mapping
 for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(submit_buffer, "i")) do
   if mapping.lhs == "<CR>" then
     select_mapping = mapping.callback
-    break
+  elseif mapping.lhs == "<C-T>" then
+    toggle_mapping = mapping.callback
   end
 end
 assert(select_mapping, "search picker did not map selection")
+assert(toggle_mapping, "YouTube picker did not map the open-target toggle")
+toggle_mapping()
+assert(
+  submit_picker.results_title:match("Open: YouTube$"),
+  "open target was not shown in picker title"
+)
+submit_picker:set_selection(submit_picker:get_row(1))
 select_mapping()
 assert(opened_video == "video-one", "provider open action was not used for a selected video")
+assert(opened_target == "video", "selected video did not use the toggled YouTube target")
 print("jam.nvim picker tests passed")

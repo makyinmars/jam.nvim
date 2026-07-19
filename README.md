@@ -10,8 +10,8 @@ playback in Neovim, or open YouTube results in the first-party YouTube Music app
 ## Features
 
 - Live Spotify search for music, playlists, podcasts, and episodes
-- Explicit-submit YouTube music-video search with exact-query caching
-- YouTube-attributed results that open in YouTube Music, with a YouTube fallback
+- Explicit-submit YouTube music-video search with a visible loading state and exact-query caching
+- YouTube-attributed results with a picker toggle for opening in YouTube Music or YouTube
 - Drill-down for album tracks, artist top tracks, and podcast episodes
 - Play, pause, skip, go back, and add tracks or episodes to the queue
 - OAuth Authorization Code flow with PKCE—no client secret in your config
@@ -189,8 +189,11 @@ Tokens are stored with `0600` permissions under Neovim's data directory. Run
    ```
 
 5. Run `:checkhealth jam`, open `:Jam`, enter a query, and press `<C-s>` or
-   `<CR>` when no result is selected. Selecting a result opens it in YouTube
-   Music. Set `open_host = "www.youtube.com"` to always use regular YouTube.
+   `<CR>` when no result is selected. The results title shows `Loading…` while
+   the request is in flight. Press `<C-t>` to toggle whether selections open in
+   YouTube Music or regular YouTube; the current target is shown in the picker
+   title. Set `open_host = "www.youtube.com"` to make regular YouTube the
+   initial target.
 
 The `music.youtube.com/watch` handoff is a best-effort web route, not a documented
 Google integration API. Use regular YouTube if the Music host does not handle a
@@ -251,6 +254,7 @@ Picker mappings:
 | `<C-p>` | Pause playback |
 | `<Esc>` | Return from a collection to the original search |
 | `<C-s>` | Submit a YouTube music-video search |
+| `<C-t>` | Toggle the YouTube result target between YouTube Music and YouTube |
 
 Selecting an album opens its tracks in disc and track order. Selecting an artist
 opens their top tracks, and selecting a podcast opens its episodes. Press `<Esc>`

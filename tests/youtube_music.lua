@@ -18,9 +18,9 @@ http.request = function(opts, callback)
         {
           id = { videoId = "video-one" },
           snippet = {
-            title = "Test Video",
-            description = "A test music video",
-            channelTitle = "Test Channel",
+            title = "Test Video &amp; More",
+            description = "A test music video &#39;description&#39;",
+            channelTitle = "Test &quot;Channel&quot;",
             publishedAt = "2026-07-18T12:34:56Z",
             thumbnails = {
               default = { url = "https://example.com/default.jpg" },
@@ -65,6 +65,9 @@ assert(not provider.capabilities.queue)
 assert(not provider.capabilities.now_playing)
 assert(not provider.capabilities.playlists)
 assert(provider.capabilities.artwork)
+assert(provider.default_open_target == "music")
+assert(provider.open_targets[1].id == "music")
+assert(provider.open_targets[2].id == "video")
 
 local search_error
 local results
@@ -94,8 +97,9 @@ local result = results[1]
 assert(result.id == "video-one")
 assert(result.kind == "video")
 assert(result.service_kind == "youtube_video")
-assert(result.name == "Test Video")
-assert(result.subtitle == "Test Channel")
+assert(result.name == "Test Video & More")
+assert(result.subtitle == 'Test "Channel"')
+assert(result.description == "A test music video 'description'")
 assert(result.duration_ms == 3723000)
 assert(result.release_date == "2026-07-18T12:34:56Z")
 assert(result.image_url == "https://example.com/high.jpg")
@@ -161,7 +165,20 @@ end)
 assert(not open_error, open_error)
 assert(opened_urls[1] == "https://music.youtube.com/watch?v=video-one")
 assert(opened_urls[2] == "https://www.youtube.com/watch?v=video-one")
-assert(open_message == "Opened Test Video on YouTube")
+assert(open_message == "Opened Test Video & More on YouTube")
+
+opened_urls = {}
+util.open_url = function(url)
+  table.insert(opened_urls, url)
+  return true
+end
+provider:open(vim.tbl_extend("force", {}, result, { open_target = "video" }), function(err, message)
+  open_error = err
+  open_message = message
+end)
+assert(not open_error, open_error)
+assert(opened_urls[1] == "https://www.youtube.com/watch?v=video-one")
+assert(open_message == "Opened Test Video & More on YouTube")
 
 opened_urls = {}
 local youtube_provider = YouTubeMusic.new({
@@ -179,7 +196,7 @@ youtube_provider:open({ id = result.id, name = result.name }, function(err, mess
   open_message = message
 end)
 assert(not open_error, open_error)
-assert(open_message == "Opened Test Video on YouTube")
+assert(open_message == "Opened Test Video & More on YouTube")
 
 util.open_url = function()
   return false, "no browser available"
